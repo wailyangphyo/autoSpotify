@@ -9,34 +9,35 @@ import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
-import java.net.URLEncoder;
-import org.python.util.PythonInterpreter;
+import java.net.URL;
+import java.net.URLConnection;
+import com.mashape.unirest.http.exceptions.UnirestException;
+import com.wrapper.spotify.enums.ModelObjectType;
+import com.wrapper.spotify.model_objects.special.SnapshotResult;
+import com.wrapper.spotify.model_objects.specification.Paging;
+import com.wrapper.spotify.model_objects.specification.Track;
+import com.wrapper.spotify.requests.data.playlists.AddItemsToPlaylistRequest;
+import com.wrapper.spotify.requests.data.search.simplified.SearchTracksRequest;
 import com.google.api.services.youtube.model.Video;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.mashape.unirest.http.HttpResponse;
-import com.mashape.unirest.http.JsonNode;
-import com.mashape.unirest.http.Unirest;
-import com.sapher.youtubedl.YoutubeDL;
 import com.sapher.youtubedl.YoutubeDLException;
-import com.sapher.youtubedl.YoutubeDLRequest;
-import com.sapher.youtubedl.YoutubeDLResponse;
-import com.sapher.youtubedl.mapper.VideoInfo;
-import org.json.*;
+
 import com.google.api.services.youtube.YouTube;
-import com.google.api.services.youtube.model.SearchListResponse;
 import com.google.api.services.youtube.model.VideoListResponse;
 
+import com.wrapper.spotify.SpotifyApi;
+import com.wrapper.spotify.exceptions.SpotifyWebApiException;
+import com.wrapper.spotify.model_objects.specification.Playlist;
+import com.wrapper.spotify.requests.data.playlists.CreatePlaylistRequest;
+import org.apache.hc.core5.http.ParseException;
 import java.io.IOException;
+import java.util.*;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.security.GeneralSecurityException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
 
 /**API key:  AIzaSyDqaDZ9PI7_ATyditJVAjmfsWFIs1dbs9A*/
+/**Spotify User Id:   12136392680
+ */
 public class autoSpotify {
 /**1. Log in youtube
  * 2. Grab our liked vids
@@ -47,11 +48,11 @@ public class autoSpotify {
 private static final String CLIENT_SECRETS= "client_secrets.json";
     private static final Collection<String> SCOPES =
             Arrays.asList("https://www.googleapis.com/auth/youtube.readonly");
-
     private static final String APPLICATION_NAME = "youtube";
     //private static final String api_version = "v3";
     private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
-
+    public static ArrayList<String> allURIs;
+    public static String accessToken = "BQDggMQodIl_xOPVS0OuNu1ltil9z3LSegXCG5K7op18OUtEl1OzCUkTUwW-nmQZjaSWgbKv7E9PYiqTiroYYfhhBP87RZjpewO01NpS3K9EpZqcnSEeX9o8Noa55wQdKlc0eANnjCSW81S8YRRV9Mqan27UdcPh_IlAO42xRBlj";
     /** 1. Log in youtube
      * Create an authorized Credential object.
      *
@@ -85,72 +86,112 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
                 .setApplicationName(APPLICATION_NAME)
                 .build();
     }
-
-
     /** 2. Grab playlist liked vids
      *  @throws GeneralSecurityException, IOException, GoogleJsonResponseException
      * */
     public static void get_liked_vids(YouTube youtubeService)
-            throws GeneralSecurityException, IOException, GoogleJsonResponseException,
-            YoutubeDLException {
+            throws IOException
+             {
         // Define and execute the API request
+                 long maxRes =50;
         YouTube.Videos.List request = youtubeService.videos()
                 .list(Collections.singletonList("snippet,contentDetails,statistics"));
-        VideoListResponse response = request.setMyRating("like").execute();
-        System.out.println(response);
-        System.out.println(response.getItems().get(0).getClass().getName());
-
-        System.out.println(response.getItems().get(4).getSnippet().getTitle());
+        VideoListResponse response = request.setMyRating("like")
+                .setMaxResults(maxRes)
+                .execute();
         /**amount of contentDetails Json have, so we can access its data such as snippet and titles*/
         int numOfContentDetails = response.getItems().size();
-        String videoTitle = "";
         String videoURL = "";
+        allURIs = new ArrayList<>();
+       // int counter = 0;
         for(int i = 0 ; i< numOfContentDetails;i++){
             /**accessing individual contents*/
             Video videoInfo = response.getItems().get(i);
             /**has video title*/
-            videoTitle = videoInfo.getSnippet().getTitle();
             /**has video URL*/
             videoURL = "https://www.youtube.com/watch?v="+videoInfo.getId();
-            System.out.println(videoURL);
-            /**directory to store youtube dl. Might be useless*/
-            String directory = System.getProperty("chmod u+x user.home");
-            //YoutubeDLResponse dlResponse = youtube_dl_response(videoURL,directory);
-            VideoInfo info = YoutubeDL.getVideoInfo(videoURL);
-           // System.out.println("description " +info.description);
-            System.out.println("displayID " +info.displayId);
-            System.out.println("title " +info.title);
-            /**store these info into a txt file and read it in python. then python
-             * write song , and artist name using youtube_dl
-             * */
-
-
-
-
-            //System.out.println("hello "+dlResponse.getOut());
-
-
+            String song_name = fetch_song_name(videoURL);
+            if(song_name.length() > 50) {
+                continue;
+            }
+            allURIs.add(search_song(song_name));
         }
-//        JSONArray arr = (JSONArray) response.get("items");
-//        JSONObject contentObj = arr.getJSONObject(0);
-//        System.out.println(contentObj.get("caption"));
-//
-//        System.out.println(arr);
-
     }
 
-    public static YoutubeDLResponse youtube_dl_response(String url, String dir)
-            throws YoutubeDLException {
-        YoutubeDLRequest request = new YoutubeDLRequest(url,dir);
-        request.setOption("ignore-errors");		// --ignore-errors
-        request.setOption("output", "%(id)s");	// --output "%(id)s"
-        request.setOption("retries", 10);		// --retries 10
-        request.setOption("help");		// --ignore-errors
-
-
-        return YoutubeDL.execute(request);
+    /**make playlist on your spotify account*/
+    public static String create_playlist() throws UnirestException {
+        String userId = "12136392680";
+        String name = "youtubeLikedMusic";
+        String playListId ="";
+        SpotifyApi spotifyApi = new SpotifyApi.Builder()
+                .setAccessToken(accessToken)
+                .build();
+        CreatePlaylistRequest createPlaylistRequest = spotifyApi.createPlaylist(userId,name)
+                .build();
+        try {
+                final Playlist playlist = createPlaylistRequest.execute();
+                playListId=playlist.getId();
+        } catch (IOException | SpotifyWebApiException | ParseException e) {
+            System.out.println("Error: " + e.getMessage());
+        }
+        return playListId;
     }
 
+    /**search song on spotify*/
+    public static String search_song(String song_name){
+        SpotifyApi spotifyApi = new SpotifyApi.Builder()
+                .setAccessToken(accessToken)
+                .build();
+        SearchTracksRequest searchTracksRequest  = spotifyApi.searchTracks(song_name)
+                .build();
+        String uri ="";
+        try {
+            final Paging<Track> searchResult = searchTracksRequest.execute();
+            uri = searchResult.getItems()[0].getUri();
+        } catch (IOException | SpotifyWebApiException | ParseException e) {
+            System.out.println("Error: " + e.getMessage());
+        }
+        return uri;
+    }
+
+    /**fetch song name thru HTML data. need to have "song" section in tag on youtube description*/
+    public static String fetch_song_name(String videoURL){
+        String content = null;
+        URLConnection connection = null;
+        try {
+            /**between
+             *
+             * "title":{"simpleText":"Song"},"contents":[{"simpleText":"..."}]
+             *
+             * */
+            connection =  new URL(videoURL).openConnection();
+            Scanner scanner = new Scanner(connection.getInputStream());
+            scanner.useDelimiter("\\Z");
+            content = scanner.next();
+            scanner.close();
+        }catch ( Exception ex ) {
+            ex.printStackTrace();
+        }
+        String start = "\"title\":{\"simpleText\":\"Song\"},\"contents\":[{\"simpleText\":\"";
+        String end = "}]";
+        int indexFirst = content.indexOf(start);
+        int indexSecond = content.indexOf(end,indexFirst);
+        String song_name = content.substring(indexFirst+start.length(),indexSecond-1);
+        return song_name;
+    }
+    public static void add_songs_to_playlist() throws GeneralSecurityException, IOException, UnirestException, ParseException, SpotifyWebApiException {
+        YouTube youtubeService = getService();
+        get_liked_vids(youtubeService);
+        String playlist_id = create_playlist();
+        SpotifyApi spotifyApi = new SpotifyApi.Builder()
+                .setAccessToken(accessToken)
+                .build();
+        String[] collectedURIsArray = new String[allURIs.size()];
+        allURIs.toArray(collectedURIsArray);
+        AddItemsToPlaylistRequest addItemsToPlaylistRequest  = spotifyApi
+                .addItemsToPlaylist(playlist_id,collectedURIsArray)
+                .build();
+    }
     /**
      * Call function to create API service object. Define and
      * execute API request. Print API response.
@@ -158,10 +199,8 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
      * @throws GeneralSecurityException, IOException, GoogleJsonResponseException
      */
     public static void main(String[] args)
-            throws GeneralSecurityException, IOException, GoogleJsonResponseException, YoutubeDLException {
-        YouTube youtubeService = getService();
-        get_liked_vids(youtubeService);
-
+            throws GeneralSecurityException, IOException, GoogleJsonResponseException, YoutubeDLException, UnirestException, ParseException, SpotifyWebApiException {
+        add_songs_to_playlist();
     }
 
 
