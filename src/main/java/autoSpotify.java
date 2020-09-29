@@ -1,4 +1,3 @@
-
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
@@ -12,22 +11,15 @@ import com.google.api.client.json.jackson2.JacksonFactory;
 import java.net.URL;
 import java.net.URLConnection;
 import com.mashape.unirest.http.exceptions.UnirestException;
-import com.wrapper.spotify.enums.ModelObjectType;
-import com.wrapper.spotify.model_objects.special.SnapshotResult;
-import com.wrapper.spotify.model_objects.specification.Paging;
-import com.wrapper.spotify.model_objects.specification.Track;
-import com.wrapper.spotify.requests.data.playlists.AddItemsToPlaylistRequest;
+import com.wrapper.spotify.model_objects.specification.*;
+import com.wrapper.spotify.requests.data.playlists.*;
 import com.wrapper.spotify.requests.data.search.simplified.SearchTracksRequest;
 import com.google.api.services.youtube.model.Video;
 import com.sapher.youtubedl.YoutubeDLException;
-
 import com.google.api.services.youtube.YouTube;
 import com.google.api.services.youtube.model.VideoListResponse;
-
 import com.wrapper.spotify.SpotifyApi;
 import com.wrapper.spotify.exceptions.SpotifyWebApiException;
-import com.wrapper.spotify.model_objects.specification.Playlist;
-import com.wrapper.spotify.requests.data.playlists.CreatePlaylistRequest;
 import org.apache.hc.core5.http.ParseException;
 import java.io.IOException;
 import java.util.*;
@@ -49,16 +41,17 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
     private static final Collection<String> SCOPES =
             Arrays.asList("https://www.googleapis.com/auth/youtube.readonly");
     private static final String APPLICATION_NAME = "youtube";
-    //private static final String api_version = "v3";
     private static final JsonFactory JSON_FACTORY = JacksonFactory.getDefaultInstance();
     public static ArrayList<String> allURIs;
-    public static String accessToken = "BQDggMQodIl_xOPVS0OuNu1ltil9z3LSegXCG5K7op18OUtEl1OzCUkTUwW-nmQZjaSWgbKv7E9PYiqTiroYYfhhBP87RZjpewO01NpS3K9EpZqcnSEeX9o8Noa55wQdKlc0eANnjCSW81S8YRRV9Mqan27UdcPh_IlAO42xRBlj";
+    public static List<String> tracks;
+
+    public static String accessToken = "BQCR16Ow3RIB3rYem_XOIUR70iqRgwj4_lByneuBDC9FLyw9R6W4woHVJKtlYzsEdeXrdmHXQkZiGHHeJw-RTluwAAv9knYHWKpxF1kSu_EGpYC_kJrIFzMZoR88HrSw0_RIUNlnTcSJ-8D7RzeIT_LGdMZwLXg4yoqFl3AhZF3g";
     /** 1. Log in youtube
      * Create an authorized Credential object.
-     *
      * @return an authorized Credential object.
      * @throws IOException
      */
+
     public static Credential authorize(final NetHttpTransport httpTransport) throws IOException {
         // Load client secrets.
         InputStream in = autoSpotify.class.getResourceAsStream(CLIENT_SECRETS);
@@ -103,15 +96,16 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
         int numOfContentDetails = response.getItems().size();
         String videoURL = "";
         allURIs = new ArrayList<>();
-       // int counter = 0;
         for(int i = 0 ; i< numOfContentDetails;i++){
             /**accessing individual contents*/
             Video videoInfo = response.getItems().get(i);
-            /**has video title*/
-            /**has video URL*/
             videoURL = "https://www.youtube.com/watch?v="+videoInfo.getId();
             String song_name = fetch_song_name(videoURL);
             if(song_name.length() > 50) {
+                continue;
+            }
+            /**name parsed from HTML is different from Spotify's track names*/
+            if(tracks.contains(song_name)){
                 continue;
             }
             allURIs.add(search_song(song_name));
@@ -119,10 +113,15 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
     }
 
     /**make playlist on your spotify account*/
-    public static String create_playlist() throws UnirestException {
+    public static String create_playlist() throws UnirestException, ParseException, SpotifyWebApiException, IOException {
         String userId = "12136392680";
         String name = "youtubeLikedMusic";
-        String playListId ="";
+        String playListId =check_playList(userId,name);
+        /**if playlist exists*/
+        if( playListId != null) {
+            return playListId;
+        }
+        playListId="";
         SpotifyApi spotifyApi = new SpotifyApi.Builder()
                 .setAccessToken(accessToken)
                 .build();
@@ -135,6 +134,20 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
             System.out.println("Error: " + e.getMessage());
         }
         return playListId;
+    }
+    /**check if playlist exists*/
+    public static String check_playList(String userId, String playlist_name) throws ParseException, SpotifyWebApiException, IOException {
+        SpotifyApi spotifyApi = new SpotifyApi.Builder()
+                .setAccessToken(accessToken)
+                .build();
+        GetListOfUsersPlaylistsRequest getListOfUsersPlaylistsRequest = spotifyApi
+                .getListOfUsersPlaylists(userId)
+                .build();
+        Paging<PlaylistSimplified> playlistSimplifiedPaging = getListOfUsersPlaylistsRequest.execute();
+        for(PlaylistSimplified i : playlistSimplifiedPaging.getItems()){
+            if(playlist_name.equals(i.getName())) return i.getId();
+        }
+        return null;
     }
 
     /**search song on spotify*/
@@ -160,9 +173,7 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
         URLConnection connection = null;
         try {
             /**between
-             *
              * "title":{"simpleText":"Song"},"contents":[{"simpleText":"..."}]
-             *
              * */
             connection =  new URL(videoURL).openConnection();
             Scanner scanner = new Scanner(connection.getInputStream());
@@ -179,10 +190,25 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
         String song_name = content.substring(indexFirst+start.length(),indexSecond-1);
         return song_name;
     }
+    public static void get_playlist_tracks(String playlistId)
+            throws ParseException, SpotifyWebApiException, IOException {
+        tracks = new ArrayList<>();
+        SpotifyApi spotifyApi = new SpotifyApi.Builder()
+                .setAccessToken(accessToken)
+                .build();
+        GetPlaylistsItemsRequest getPlaylistsItemsRequest = spotifyApi
+                .getPlaylistsItems(playlistId)
+                .build();
+        Paging<PlaylistTrack> playlistTrackPaging = getPlaylistsItemsRequest.execute();
+        for(PlaylistTrack t : playlistTrackPaging.getItems()){
+            tracks.add(((Track)(t.getTrack())).getName());
+        }
+    }
     public static void add_songs_to_playlist() throws GeneralSecurityException, IOException, UnirestException, ParseException, SpotifyWebApiException {
         YouTube youtubeService = getService();
-        get_liked_vids(youtubeService);
         String playlist_id = create_playlist();
+        get_playlist_tracks(playlist_id);
+        get_liked_vids(youtubeService);
         SpotifyApi spotifyApi = new SpotifyApi.Builder()
                 .setAccessToken(accessToken)
                 .build();
@@ -191,6 +217,7 @@ private static final String CLIENT_SECRETS= "client_secrets.json";
         AddItemsToPlaylistRequest addItemsToPlaylistRequest  = spotifyApi
                 .addItemsToPlaylist(playlist_id,collectedURIsArray)
                 .build();
+        addItemsToPlaylistRequest.execute();
     }
     /**
      * Call function to create API service object. Define and
